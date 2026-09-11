@@ -1,0 +1,132 @@
+{
+  "schema_version": "1.0",
+  "capability_id": "lookup-savings-balance",
+  "name": "Lookup Savings Balance",
+  "description": "Look up a member by ID and return their current savings balance.",
+  "application": "Legacy Bank Operations Demo",
+  "compatibility": {
+    "application_family": "legacy-bank-demo",
+    "application_version": "demo-v1",
+    "tenant_variant": "base"
+  },
+  "risk_level": "safe",
+  "approval_state": "approved",
+  "inputs": [
+    {
+      "name": "member_id",
+      "type": "string",
+      "required": true,
+      "description": "Member identifier supplied at invocation time."
+    }
+  ],
+  "outputs": [
+    {
+      "name": "savings_balance",
+      "type": "string",
+      "description": "Current savings balance returned by the account view."
+    }
+  ],
+  "steps": [
+    {
+      "id": "navigate",
+      "action": "navigate",
+      "target": null,
+      "value": "http://127.0.0.1:8000",
+      "output_key": null,
+      "expected_result": "Member Search is available",
+      "timeout_ms": 5000,
+      "retry": {"max_attempts": 2, "backoff_ms": 250},
+      "risk": "safe"
+    },
+    {
+      "id": "member-id",
+      "action": "type",
+      "target": {
+        "description": "Member ID field",
+        "candidates": [
+          {"strategy": "label", "value": "Member ID", "name": null, "exact": true},
+          {"strategy": "css", "value": "#mid", "name": null, "exact": true}
+        ],
+        "expected_tag": "input",
+        "robustness_note": "Prefer the human-visible label; keep the stable element id as a deterministic fallback."
+      },
+      "value": "{{member_id}}",
+      "output_key": null,
+      "expected_result": "Member ID is entered",
+      "timeout_ms": 5000,
+      "retry": {"max_attempts": 2, "backoff_ms": 250},
+      "risk": "safe"
+    },
+    {
+      "id": "search",
+      "action": "click",
+      "target": {
+        "description": "Search Member button",
+        "candidates": [
+          {"strategy": "role", "value": "button", "name": "Search Member", "exact": true},
+          {"strategy": "text", "value": "Search Member", "name": null, "exact": true}
+        ],
+        "expected_tag": null,
+        "robustness_note": "Accessible role and name are preferred; visible text is the fallback."
+      },
+      "value": null,
+      "output_key": null,
+      "expected_result": "Member detail or a known business outcome is shown",
+      "timeout_ms": 5000,
+      "retry": {"max_attempts": 2, "backoff_ms": 250},
+      "risk": "safe"
+    },
+    {
+      "id": "view-savings",
+      "action": "click",
+      "target": {
+        "description": "View Savings link",
+        "candidates": [
+          {"strategy": "role", "value": "link", "name": "View Savings", "exact": true},
+          {"strategy": "text", "value": "View Savings", "name": null, "exact": true}
+        ],
+        "expected_tag": null,
+        "robustness_note": "Accessible link identity is preferred over page-position selectors."
+      },
+      "value": null,
+      "output_key": null,
+      "expected_result": "Savings Account view opens",
+      "timeout_ms": 5000,
+      "retry": {"max_attempts": 2, "backoff_ms": 250},
+      "risk": "safe"
+    },
+    {
+      "id": "extract-balance",
+      "action": "extract",
+      "target": {
+        "description": "Current savings balance",
+        "candidates": [
+          {"strategy": "css", "value": "#savings-balance", "name": null, "exact": true}
+        ],
+        "expected_tag": null,
+        "robustness_note": "The demo exposes one stable account-value node; production adapters could add accessibility or visual fallbacks."
+      },
+      "value": null,
+      "output_key": "savings_balance",
+      "expected_result": "A balance value is extracted",
+      "timeout_ms": 5000,
+      "retry": {"max_attempts": 2, "backoff_ms": 250},
+      "risk": "safe"
+    }
+  ],
+  "checkpoint": {
+    "type": "url_contains",
+    "value": "/member/{{member_id}}/savings"
+  },
+  "business_outcomes": [
+    {
+      "code": "MEMBER_NOT_FOUND",
+      "selector": "[data-business-outcome='MEMBER_NOT_FOUND']",
+      "message": "No member exists for the supplied identifier."
+    }
+  ],
+  "metadata": {
+    "source": "checked-in reviewable example",
+    "note": "A genuine discovery run may overwrite this file after OPENAI_API_KEY is configured."
+  }
+}

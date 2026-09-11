@@ -1,0 +1,29 @@
+INFO:     Started server process [94547]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:64824 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64839 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64839 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64859 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64859 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64980 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64991 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64991 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65134 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65134 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65142 - "GET /member?member_id=12345 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65164 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65164 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65164 - "GET /member?member_id=12345 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65164 - "GET /member/12345/savings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65191 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65191 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65191 - "GET /member?member_id=99999 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65208 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65208 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65208 - "GET /member?member_id=70000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65232 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65232 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65232 - "GET /member?member_id=70000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65240 - "GET /member/70000/savings HTTP/1.1" 200 OK

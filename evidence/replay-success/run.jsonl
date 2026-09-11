@@ -1,0 +1,7 @@
+{"timestamp": "2026-09-11T07:17:29.637165+00:00", "run_id": "b951036a-07cd-4f5c-845a-bb7268840682", "mode": "replay", "event": "step_success", "step_id": "navigate", "action": "navigate", "attempt": 1, "duration_ms": 86.55}
+{"timestamp": "2026-09-11T07:17:29.755630+00:00", "run_id": "b951036a-07cd-4f5c-845a-bb7268840682", "mode": "replay", "event": "step_success", "step_id": "member-id", "action": "type", "attempt": 1, "duration_ms": 68.4}
+{"timestamp": "2026-09-11T07:17:29.852035+00:00", "run_id": "b951036a-07cd-4f5c-845a-bb7268840682", "mode": "replay", "event": "step_success", "step_id": "search", "action": "click", "attempt": 1, "duration_ms": 85.54}
+{"timestamp": "2026-09-11T07:17:29.963653+00:00", "run_id": "b951036a-07cd-4f5c-845a-bb7268840682", "mode": "replay", "event": "step_success", "step_id": "view-savings", "action": "click", "attempt": 1, "duration_ms": 81.64}
+{"timestamp": "2026-09-11T07:17:29.988732+00:00", "run_id": "b951036a-07cd-4f5c-845a-bb7268840682", "mode": "replay", "event": "step_success", "step_id": "extract-balance", "action": "extract", "attempt": 1, "duration_ms": 12.06}
+{"timestamp": "2026-09-11T07:17:29.988889+00:00", "run_id": "b951036a-07cd-4f5c-845a-bb7268840682", "mode": "replay", "event": "output_extracted", "step_id": "extract-balance", "key": "savings_balance", "value": "4621.77"}
+{"timestamp": "2026-09-11T07:17:30.208661+00:00", "run_id": "b951036a-07cd-4f5c-845a-bb7268840682", "mode": "replay", "event": "replay_complete", "outputs": {"savings_balance": "4621.77"}, "recovered_conditions": []}
