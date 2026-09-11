@@ -21,9 +21,9 @@
   ],
   "outputs": [
     {
-      "name": "savings_balance",
+      "name": "current_savings_balance",
       "type": "string",
-      "description": "Extracted savings_balance"
+      "description": "Extracted current_savings_balance"
     }
   ],
   "steps": [
@@ -61,11 +61,11 @@
           }
         ],
         "expected_tag": "input",
-        "robustness_note": "Use the associated visible label or stable id."
+        "robustness_note": "Use the associated visible label or stable ID."
       },
       "value": "{{member_id}}",
       "output_key": null,
-      "expected_result": "Member ID field contains 12345.",
+      "expected_result": "The Member ID field contains 12345.",
       "timeout_ms": 5000,
       "retry": {
         "max_attempts": 2,
@@ -90,20 +90,14 @@
             "value": "Search Member",
             "name": null,
             "exact": true
-          },
-          {
-            "strategy": "css",
-            "value": "button",
-            "name": null,
-            "exact": true
           }
         ],
         "expected_tag": "button",
-        "robustness_note": "Use the named button to submit the entered member ID."
+        "robustness_note": "Use the accessible button name."
       },
       "value": null,
       "output_key": null,
-      "expected_result": "Member details or savings balance for member 12345 is displayed.",
+      "expected_result": "Member 12345 search results are displayed.",
       "timeout_ms": 5000,
       "retry": {
         "max_attempts": 2,
@@ -115,47 +109,21 @@
       "id": "step-03-extract",
       "action": "extract",
       "target": {
-        "description": "Current savings balance value",
+        "description": "Savings",
         "candidates": [
           {
-            "strategy": "text",
-            "value": "Savings",
+            "strategy": "xpath",
+            "value": "//tr[.//*[self::th or self::td][normalize-space()='Savings']]/*[self::th or self::td][2]",
             "name": null,
             "exact": true
           }
         ],
         "expected_tag": null,
-        "robustness_note": "Use the visible Savings data field and capture its adjacent value."
+        "robustness_note": "Canonicalized from observed legacy label/value row during discovery."
       },
       "value": null,
-      "output_key": "savings_balance",
-      "expected_result": "The current savings balance for member 12345 is extracted.",
-      "timeout_ms": 5000,
-      "retry": {
-        "max_attempts": 2,
-        "backoff_ms": 250
-      },
-      "risk": "safe"
-    },
-    {
-      "id": "step-04-extract",
-      "action": "extract",
-      "target": {
-        "description": "Savings balance value",
-        "candidates": [
-          {
-            "strategy": "text",
-            "value": "$4621.77",
-            "name": null,
-            "exact": true
-          }
-        ],
-        "expected_tag": null,
-        "robustness_note": "Visible text is the current savings balance shown in the member detail table."
-      },
-      "value": null,
-      "output_key": "savings_balance",
-      "expected_result": "The current savings balance for member 12345 is extracted as $4621.77.",
+      "output_key": "current_savings_balance",
+      "expected_result": "The current savings balance $4621.77 is extracted.",
       "timeout_ms": 5000,
       "retry": {
         "max_attempts": 2,
