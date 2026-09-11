@@ -1,6 +1,6 @@
 # Computer-Use Automation System
 
-A small end-to-end implementation of a record-once / replay-many computer-use system for legacy applications. An LLM discovers a UI workflow once, the successful run is converted into a typed capability artifact, and later invocations replay that artifact deterministically without an LLM deciding each step.
+A small end-to-end implementation of a record-once / replay-many computer-use system for legacy applications. An LLM discovers how to complete a workflow against a live UI, the successful run is converted into a typed and versioned capability artifact, and subsequent invocations replay that artifact deterministically without an LLM in the decision loop.
 
 The concrete target is a local fake banking operations console. It uses only synthetic data and includes normal success, `MEMBER_NOT_FOUND`, a recoverable interstitial, session expiry, a permission handoff, and a risky account-opening review path.
 
@@ -23,6 +23,7 @@ The implementation is intentionally single-process and file-backed:
 
 ```text
 app/
+  __init__.py
   agent.py
   capability.py
   cli.py
@@ -37,21 +38,42 @@ app/
   redaction.py
   replay.py
   surface.py
+
 evidence/
+  discovery/
+    final.png
+    run.jsonl
+
+  replay-success/
+    final.png
+    run.jsonl
+
+  replay-not-found/
+    business-outcome.png
+    run.jsonl
+
+  replay-handoff/
+    run.jsonl
+    handoff screenshots
+
   example_capability.json
   README.md
   BUILD_VERIFICATION.md
+
 tests/
   conftest.py
   test_browser_integration.py
   test_core.py
   test_demo.py
+  test_llm_schema.py
   test_playwright_surface.py
   test_replay_unit.py
+
+.env.example
+.gitignore
 README.md
 REPORT.md
 pyproject.toml
-.env.example
 ```
 
 ## Requirements and setup
@@ -60,7 +82,7 @@ Python 3.11+ is supported; Python 3.12+ is recommended.
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate              # Windows: .venv\\Scripts\\activate
+source .venv/bin/activate              # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
 pip install -e ".[dev,llm]"
 playwright install chromium
@@ -107,7 +129,11 @@ python -m app.cli discover \
   --headed
 ```
 
-The model receives a compact observation rather than raw full-page HTML, emits one typed action at a time, and every decision passes schema and policy validation before Playwright executes it. The successful trace is parameterized (`12345` → `{{member_id}}`) and saved as a reviewable artifact.
+The model receives a compact observation rather than raw full-page HTML, emits one typed action at a time, and every decision passes schema and policy validation before Playwright executes it.
+
+The successful trace is parameterized (`12345` → `{{member_id}}`) and saved as a reviewable artifact.
+
+The committed `evidence/example_capability.json` was generated from the successful live LLM discovery run rather than being manually authored.
 
 ## Deterministic replay
 
@@ -127,10 +153,12 @@ Expected result contains:
 {
   "status": "success",
   "outputs": {
-    "savings_balance": "4621.77"
+    "current_savings_balance": "$4621.77"
   }
 }
 ```
+
+This replay follows the saved capability artifact directly; the LLM does not decide the next action.
 
 ### Business outcome
 
@@ -169,7 +197,9 @@ python -m app.cli replay \
   --interactive-handoff
 ```
 
-When the permission marker appears, automation pauses, records an intervention, releases session ownership, and leaves the existing browser open. Click **Operator Override** in that same browser. Then return to the terminal and press Enter. Ownership returns to automation and replay continues.
+When the permission marker appears, automation pauses, records an intervention, releases session ownership, and leaves the existing browser open.
+
+Click **Operator Override** in that same browser. Then return to the terminal and press Enter. Ownership returns to automation and replay continues in the same live session.
 
 ## Safety model
 
@@ -180,18 +210,63 @@ The executor enforces policy outside the model prompt:
 3. Risk class is checked.
 4. Only then can the surface adapter execute the action.
 
-The default policy permits only `localhost` and `127.0.0.1`. Risky and irreversible actions require human control. The model cannot submit arbitrary Python, shell commands, JavaScript, or unrestricted URLs. Structured logs recursively redact common secret-bearing fields such as passwords, tokens, API keys, cookies, authorization values, and SSNs.
+The default policy permits only `localhost` and `127.0.0.1`.
+
+Risky and irreversible actions require human control. The model cannot submit arbitrary Python, shell commands, JavaScript, or unrestricted URLs.
+
+Structured logs recursively redact common secret-bearing fields such as passwords, tokens, API keys, cookies, authorization values, and SSNs.
+
+## Evidence
+
+The repository contains evidence from the verified end-to-end demonstration:
+
+- `evidence/discovery/` — genuine LLM-driven discovery run and final screenshot.
+- `evidence/example_capability.json` — capability artifact generated from the successful discovery.
+- `evidence/replay-success/` — deterministic replay of the generated artifact.
+- `evidence/replay-not-found/` — `MEMBER_NOT_FOUND` business-outcome demonstration.
+- `evidence/replay-handoff/` — same-session human intervention and resumed automation.
+
+All evidence uses synthetic data from the local banking demo application. No credentials, tokens, real PII, or production banking data are stored.
 
 ## Tests
 
+Run the full suite with:
+
 ```bash
-pytest
+python -m pytest
 ```
 
-The suite covers artifact validation, input interpolation, policy blocking, redaction, business-outcome classification, checkpoint failures, structured replay failures, recovery, handoff ownership, demo routes, Playwright locator behavior, deterministic replay, and mock-provider discovery.
+The suite covers:
 
-`tests/test_browser_integration.py` launches the real FastAPI demo plus Playwright. The build workspace used to generate this repository had an administrator Chromium URL blocklist, so those localhost navigation tests could not be completed there. `evidence/BUILD_VERIFICATION.md` records exactly what was and was not verified; nothing is fabricated.
+- artifact schema validation
+- input interpolation
+- policy enforcement
+- secret redaction
+- business-outcome classification
+- checkpoint verification
+- structured replay failures
+- recoverable conditions
+- human handoff and session ownership
+- demo routes
+- Playwright locator behavior
+- deterministic replay
+- mock-provider discovery
+- browser integration against the local demo
+
+The final test suite was executed locally on macOS after the discovery and replay fixes.
+
+Verified result:
+
+```text
+32 passed, 1 warning
+```
 
 ## Design trade-offs and limitations
 
-This is deliberately not a distributed production platform. It has no fleet scheduler, durable database, authentication layer, tenant management service, or co-browsing UI. The important seams are present: surface abstraction, typed/versioned artifact, deterministic replay, result/error taxonomy, risk enforcement, observability, and session ownership. `REPORT.md` explains how those seams extend to desktop surfaces and multi-tenant vendor variants.
+This is deliberately not a distributed production platform.
+
+It does not include a fleet scheduler, durable database, production authentication layer, tenant-management service, or full co-browsing operator console.
+
+The load-bearing seams are implemented: surface abstraction, typed/versioned capability artifacts, deterministic replay, explicit result/error taxonomy, risk enforcement, observability, and session ownership.
+
+`REPORT.md` explains how these abstractions could extend to legacy desktop surfaces, application variants, and multi-tenant vendor deployments.
