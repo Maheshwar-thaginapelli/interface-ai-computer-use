@@ -1,45 +1,344 @@
-# 1. Architecture
+1. Architecture
 
-The system is a deliberately small vertical slice. A local FastAPI application represents a legacy banking operations console. `PlaywrightSurface` is the concrete computer-use adapter, while the `Surface` protocol separates perception/action mechanics from the discovery and replay layers. The discovery path uses an `LLMProvider` to choose one typed action at a time from a compact observation. Every action is validated by Pydantic and by an explicit policy before the surface can execute it. The production-style path is `ReplayEngine`, which consumes a saved artifact and never asks an LLM what to do next.
+The system is a deliberately small end-to-end vertical slice of a record-once / replay-many computer-use platform.
 
-The implementation stays single-process and stores artifacts/evidence as files. That is intentional: queues, databases, workers, and orchestration would add deployment surface without improving the load-bearing design questions in this exercise. The main boundaries are the LLM provider, surface adapter, capability contract, policy, replay engine, and handoff controller.
+A local FastAPI application represents a legacy banking operations console. PlaywrightSurface is the concrete computer-use adapter, while the Surface abstraction separates perception and interaction mechanics from discovery and deterministic replay.
 
-# 2. Artifact schema
+The discovery path uses an LLMProvider to choose one typed action at a time from a compact representation of the current UI. Model output is parsed into structured Pydantic models and validated against policy before the browser can execute it.
 
-`CapabilityArtifact` is a typed, versioned contract rather than a raw model transcript. It includes identity and compatibility metadata, typed inputs and outputs, ordered `StepSpec` actions, risk classification, known business outcomes, and a final checkpoint. Concrete discovery values are replaced with templates such as `{{member_id}}`, so one learned flow can be invoked with different runtime inputs.
+The production-style execution path is ReplayEngine. It consumes a saved capability artifact and executes the recorded workflow deterministically without asking an LLM what action to perform next.
 
-Targets use an ordered set of locator candidates. The browser adapter prefers accessible role/name or associated labels, then visible text, then CSS/XPath fallbacks. Replay rejects ambiguous matches rather than clicking the first approximate element. `robustness_note` lets a reviewer understand why a target strategy is expected to survive. The artifact is mostly surface-neutral: actions such as click/type/extract and semantic target descriptions can be mapped by a future accessibility, vision, or desktop adapter even though this implementation uses Playwright.
+The implementation intentionally stays single-process and file-backed. Adding queues, distributed workers, databases, or orchestration would increase implementation complexity without improving the core design questions being evaluated here.
 
-Artifacts never intentionally contain credentials, cookies, tokens, or raw LLM transcripts. The checked-in example is human-readable JSON and can be reviewed or version-controlled before approval.
+The primary boundaries are:
 
-# 3. Determinism & error handling
+LLM provider
 
-Deterministic replay validates inputs, interpolates parameters, validates each action against policy, resolves a target using ordered locators, executes with bounded retries, checks for runtime conditions, extracts declared outputs, and verifies the final checkpoint. There is no LLM decision call in this path.
+surface adapter
 
-The result contract separates three concerns. A normal result returns `success` plus typed outputs. A known domain condition such as `MEMBER_NOT_FOUND` returns `business_outcome` instead of throwing a system error. Recoverable conditions such as the demo interstitial or session expiry are handled explicitly and appended to `recovered_conditions`. Unrecoverable problems return a structured failure with error code, step id, and evidence path. Locator ambiguity fails immediately; missing targets and Playwright timeouts receive only bounded retries.
+capability artifact
 
-The checkpoint prevents false success after the final click. For the sample capability it asserts that the current URL contains the parameterized savings route. A real deployment would add stronger page-state assertions and replay telemetry to identify selector/version drift.
+policy enforcement
 
-# 4. Heterogeneity & multi-tenant
+deterministic replay engine
 
-The main extension seam is `Surface`. A desktop adapter could implement the same contract using OS accessibility APIs; a vision adapter could resolve `TargetSpec` against screenshots and coordinates. The artifact records semantic action intent and prioritized target evidence rather than spreading Playwright calls through the model/replay code. A legacy-web adapter could add frame traversal, accessibility-tree matching, or constrained visual targeting without changing the calling contract.
+observability
 
-For multi-tenant reuse, the artifact already carries `application_family`, `application_version`, and `tenant_variant`. In a larger system, a base artifact would belong to a vendor/application family and tenant-specific variants would store small route or locator overrides, not full copied flows. Compatibility tests and replay telemetry would track success by vendor version and tenant. When a version starts failing checkpoints or locator resolution, the base capability could be quarantined for that compatibility range while other tenants continue using it.
+human handoff controller
 
-# 5. Escalation & handoff
+This keeps the system small enough to understand while preserving clear seams for future production expansion.
 
-`HandoffController` models explicit ownership: automation, nobody while paused, or human. When replay detects a permission marker or reaches a risky/irreversible step, it captures evidence and creates an `Intervention` containing run id, step, URL, reason, and screenshot. In non-interactive mode the run returns `paused`. In interactive headed mode, the same Playwright page remains alive, ownership moves to the human, the operator performs the manual action in that existing browser, and pressing Enter returns ownership to automation.
+2. Artifact schema
 
-This is intentionally a minimal operator surface. A production system would expose the same state transition through an authenticated operator console and remote session stream. The important seam is real: the browser context is not recreated during handoff, and automation/human ownership is mutually exclusive.
+CapabilityArtifact is a typed and versioned contract rather than a raw model transcript.
 
-# 6. Safety
+It contains:
 
-Safety is enforced in code rather than only in an LLM prompt. The default policy allowlists localhost hosts and allowed action types. Navigation is checked before execution. Actions carry `safe`, `reversible`, `risky`, or `irreversible` classifications; the latter two require a human. The LLM is never given an action that executes arbitrary Python, shell commands, or JavaScript.
+capability identity and schema version
 
-Structured logging passes records through recursive redaction for common secret-bearing field names. The demo contains synthetic data only. The design still has limits: field-name redaction is not a full DLP system, the local demo has no real authentication boundary, and a production deployment would need encrypted evidence storage, tenant-scoped authorization, retention controls, stronger content-level PII detection, signed/approved artifact versions, and audited operator identity.
+application-family and compatibility metadata
 
-# 7. Cuts
+typed runtime inputs
 
-I deliberately did not build distributed workers, queues, databases, Kubernetes deployment, full tenant plumbing, a native desktop adapter, or a real-time co-browsing console. Those pieces would be appropriate later but would distract from the central contract and replay semantics here. I also did not fabricate a genuine LLM discovery run: the build environment did not expose an `OPENAI_API_KEY`, and its managed Chromium policy blocks local URL navigation. The repository includes the genuine provider path, browser integration tests, exact commands, and a checked-in reviewable example artifact so those final evidence runs can be produced on a normal development machine.
+typed outputs
 
-With more time, the next additions would be an approval lifecycle for learned artifacts, replay stability scoring, persisted intervention records, application-family/tenant override resolution, stronger accessibility/vision targeting, and authenticated remote operator handoff.
+ordered actions
+
+target/locator strategies
+
+risk classifications
+
+retry and error behavior
+
+known business outcomes
+
+final success checkpoint
+
+creation metadata
+
+Concrete values learned during discovery are parameterized. For example, the member identifier used during discovery is converted from 12345 to {{member_id}}, allowing the same capability to execute for different members.
+
+Targets contain an ordered set of locator candidates. The browser adapter prefers stronger semantic strategies such as accessible role/name and associated labels before falling back to visible text, CSS, or XPath.
+
+For legacy table-style data extraction, the surface can also resolve semantic field descriptions to structured table values and canonicalize them into a more stable selector for the saved artifact.
+
+Ambiguous targets are rejected rather than silently selecting the first approximate match. This is particularly important for actions that mutate application state.
+
+The artifact remains mostly surface-neutral. Actions such as click, type, extract, and wait express user-interface intent rather than exposing Playwright calls directly. A future desktop, accessibility-tree, or vision-based adapter could map those same action contracts onto another interaction mechanism.
+
+The committed evidence/example_capability.json was generated from the successful live LLM-driven discovery run and is stored as human-readable JSON so it can be reviewed, versioned, and deterministically replayed.
+
+Artifacts do not intentionally persist credentials, authentication tokens, cookies, raw model transcripts, or other secrets.
+
+3. Determinism & error handling
+
+Deterministic replay performs no LLM decision calls.
+
+Given a capability artifact and runtime input values, the replay engine:
+
+validates artifact inputs,
+
+interpolates parameterized values,
+
+validates each action against policy,
+
+resolves the required control using ranked locator strategies,
+
+executes the action,
+
+handles known recoverable runtime conditions,
+
+extracts declared outputs,
+
+verifies the final checkpoint,
+
+returns a structured result.
+
+The result contract distinguishes three important categories.
+
+A normal execution returns success with declared outputs.
+
+A known domain condition such as an unknown member returns business_outcome with a code such as MEMBER_NOT_FOUND. This is intentionally not treated as an automation crash.
+
+Recoverable runtime conditions such as a known interstitial, transient delay, or simulated session expiry can be handled and recorded before replay continues.
+
+Unrecoverable failures return structured debugging information such as:
+
+error code
+
+failing step
+
+expected state
+
+observed condition
+
+evidence path
+
+Locator ambiguity is treated as a failure rather than allowing automation to guess. Missing controls and browser timeouts receive only bounded retries.
+
+The capability also contains a final checkpoint so success is verified from observable application state rather than inferred merely because the final click completed.
+
+The generated capability was successfully replayed locally without an LLM and returned:
+
+{
+  "status": "success",
+  "outputs": {
+    "current_savings_balance": "$4621.77"
+  }
+}
+
+The same artifact was also exercised with an unknown member and correctly returned MEMBER_NOT_FOUND as a business outcome.
+
+4. Heterogeneity & multi-tenant
+
+The primary extension seam is Surface.
+
+The current implementation uses Playwright, but another adapter could implement the same contract using:
+
+operating-system accessibility APIs
+
+native desktop automation
+
+browser accessibility trees
+
+screenshot/coordinate interaction
+
+constrained vision-based targeting
+
+This allows the discovery and replay layers to remain independent from the specific mechanism used to observe or control the application.
+
+A legacy-web implementation could add:
+
+iframe or frameset traversal
+
+deeper table interpretation
+
+accessibility-tree matching
+
+constrained visual fallback
+
+without changing the capability contract.
+
+For multi-tenant reuse, the artifact already carries concepts such as:
+
+application_family
+
+application_version
+
+tenant_variant
+
+In a production system, a base capability would belong to a vendor/application family. Tenant-specific differences would be represented as small overrides for routes, labels, or locator strategies instead of duplicating the entire workflow.
+
+Replay telemetry could track success rates by vendor version and tenant. If one application version begins failing checkpoints or locator resolution, that compatibility range could be quarantined while unaffected tenants continue using the base capability.
+
+This design supports reuse while still allowing controlled specialization when vendor configuration differs.
+
+5. Escalation & handoff
+
+HandoffController models explicit session ownership.
+
+A session can be owned by:
+
+automation
+
+a human operator
+
+nobody while control transfer is in progress
+
+When replay encounters a permission condition or another state that should not be handled automatically, it captures evidence and creates an intervention containing context such as:
+
+run identifier
+
+current step
+
+current URL
+
+reason for escalation
+
+screenshot/evidence
+
+current ownership state
+
+In non-interactive mode the execution can return a paused intervention state.
+
+In interactive headed mode, the same Playwright browser remains open. Automation releases ownership, the human performs the required action in that exact live session, and control is then returned to automation.
+
+The verified handoff demonstration used synthetic member 70000. Automation paused at the permission condition, the operator used the same browser session to perform the manual override, and replay resumed successfully without recreating the browser context.
+
+This is intentionally a minimal operator interface. A production deployment would expose the same ownership/state transitions through an authenticated remote operator console.
+
+The important property demonstrated here is that human and automation ownership are mutually exclusive and session context survives the handoff.
+
+6. Safety
+
+Safety is enforced in executable policy rather than relying solely on the LLM prompt.
+
+The execution path is:
+
+LLM decision
+→ schema validation
+→ policy validation
+→ risk validation
+→ surface execution
+
+The default policy allowlists only:
+
+localhost
+
+127.0.0.1
+
+Allowed action types are explicitly controlled.
+
+Actions are classified into risk levels such as:
+
+safe
+
+reversible
+
+risky
+
+irreversible
+
+Risky or irreversible behavior requires human involvement.
+
+The model is not given an interface for executing arbitrary:
+
+Python
+
+shell commands
+
+JavaScript
+
+unrestricted external URLs
+
+Structured logging passes values through recursive redaction for common secret-bearing fields such as:
+
+passwords
+
+API keys
+
+authorization values
+
+tokens
+
+cookies
+
+SSNs
+
+The banking application contains only synthetic data.
+
+The current approach still has limits. Field-name redaction is not a full data-loss-prevention system. A production implementation would also require:
+
+encrypted evidence storage
+
+authenticated operator identities
+
+tenant-scoped authorization
+
+retention policies
+
+stronger content-level PII detection
+
+artifact approval/signing
+
+audit logging
+
+production secret management
+
+7. Cuts
+
+I deliberately did not build:
+
+distributed workers
+
+queues
+
+Kubernetes deployment
+
+production databases
+
+full tenant-management infrastructure
+
+a native desktop adapter
+
+a real-time remote co-browsing console
+
+production authentication and authorization
+
+Those components would be reasonable extensions for a deployed system, but they are not necessary to demonstrate the central computer-use architecture.
+
+A genuine LLM-driven discovery run was completed locally against the live demo application after configuring model API access.
+
+That discovery produced the committed capability artifact. The generated artifact was then replayed deterministically without an LLM decision loop and successfully returned the expected savings balance.
+
+Additional verified scenarios included:
+
+successful deterministic replay
+
+MEMBER_NOT_FOUND as a business outcome
+
+same-session human handoff and resume
+
+policy and error-path behavior
+
+browser locator handling
+
+The final local test suite completed with:
+
+32 passed, 1 warning
+
+With more time, the next additions would be:
+
+artifact approval lifecycle
+
+replay reliability/stability scoring
+
+persistent intervention records
+
+tenant/application-family override resolution
+
+stronger accessibility and vision-based targeting
+
+authenticated remote operator handoff
+
+richer drift detection and replay telemetry
