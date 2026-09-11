@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "capability_id": "lookup-savings-balance",
   "name": "Lookup Savings Balance",
-  "description": "Look up a member by ID and return their current savings balance.",
+  "description": "Look up member 12345 and return their current savings balance",
   "application": "Legacy Bank Operations Demo",
   "compatibility": {
     "application_family": "legacy-bank-demo",
@@ -10,113 +10,137 @@
     "tenant_variant": "base"
   },
   "risk_level": "safe",
-  "approval_state": "approved",
+  "approval_state": "draft",
   "inputs": [
     {
       "name": "member_id",
       "type": "string",
       "required": true,
-      "description": "Member identifier supplied at invocation time."
+      "description": "Runtime value for member_id"
     }
   ],
   "outputs": [
     {
-      "name": "savings_balance",
+      "name": "current_savings_balance",
       "type": "string",
-      "description": "Current savings balance returned by the account view."
+      "description": "Extracted current_savings_balance"
     }
   ],
   "steps": [
     {
-      "id": "navigate",
+      "id": "step-00-navigate",
       "action": "navigate",
       "target": null,
       "value": "http://127.0.0.1:8000",
       "output_key": null,
-      "expected_result": "Member Search is available",
+      "expected_result": null,
       "timeout_ms": 5000,
-      "retry": {"max_attempts": 2, "backoff_ms": 250},
+      "retry": {
+        "max_attempts": 2,
+        "backoff_ms": 250
+      },
       "risk": "safe"
     },
     {
-      "id": "member-id",
+      "id": "step-01-type",
       "action": "type",
       "target": {
-        "description": "Member ID field",
+        "description": "Member ID input",
         "candidates": [
-          {"strategy": "label", "value": "Member ID", "name": null, "exact": true},
-          {"strategy": "css", "value": "#mid", "name": null, "exact": true}
+          {
+            "strategy": "label",
+            "value": "Member ID",
+            "name": null,
+            "exact": true
+          },
+          {
+            "strategy": "css",
+            "value": "#mid",
+            "name": null,
+            "exact": true
+          }
         ],
         "expected_tag": "input",
-        "robustness_note": "Prefer the human-visible label; keep the stable element id as a deterministic fallback."
+        "robustness_note": "Use the labeled member ID field."
       },
       "value": "{{member_id}}",
       "output_key": null,
-      "expected_result": "Member ID is entered",
+      "expected_result": "The Member ID field contains 12345.",
       "timeout_ms": 5000,
-      "retry": {"max_attempts": 2, "backoff_ms": 250},
+      "retry": {
+        "max_attempts": 2,
+        "backoff_ms": 250
+      },
       "risk": "safe"
     },
     {
-      "id": "search",
+      "id": "step-02-click",
       "action": "click",
       "target": {
         "description": "Search Member button",
         "candidates": [
-          {"strategy": "role", "value": "button", "name": "Search Member", "exact": true},
-          {"strategy": "text", "value": "Search Member", "name": null, "exact": true}
+          {
+            "strategy": "role",
+            "value": "button",
+            "name": "Search Member",
+            "exact": true
+          },
+          {
+            "strategy": "text",
+            "value": "Search Member",
+            "name": null,
+            "exact": true
+          }
         ],
-        "expected_tag": null,
-        "robustness_note": "Accessible role and name are preferred; visible text is the fallback."
+        "expected_tag": "button",
+        "robustness_note": "Use the accessible button name."
       },
       "value": null,
       "output_key": null,
-      "expected_result": "Member detail or a known business outcome is shown",
+      "expected_result": "Member details for ID 12345 are displayed.",
       "timeout_ms": 5000,
-      "retry": {"max_attempts": 2, "backoff_ms": 250},
-      "risk": "safe"
-    },
-    {
-      "id": "view-savings",
-      "action": "click",
-      "target": {
-        "description": "View Savings link",
-        "candidates": [
-          {"strategy": "role", "value": "link", "name": "View Savings", "exact": true},
-          {"strategy": "text", "value": "View Savings", "name": null, "exact": true}
-        ],
-        "expected_tag": null,
-        "robustness_note": "Accessible link identity is preferred over page-position selectors."
+      "retry": {
+        "max_attempts": 2,
+        "backoff_ms": 250
       },
-      "value": null,
-      "output_key": null,
-      "expected_result": "Savings Account view opens",
-      "timeout_ms": 5000,
-      "retry": {"max_attempts": 2, "backoff_ms": 250},
       "risk": "safe"
     },
     {
-      "id": "extract-balance",
+      "id": "step-03-extract",
       "action": "extract",
       "target": {
-        "description": "Current savings balance",
+        "description": "Savings balance value",
         "candidates": [
-          {"strategy": "css", "value": "#savings-balance", "name": null, "exact": true}
+          {
+            "strategy": "text",
+            "value": "$4621.77",
+            "name": null,
+            "exact": true
+          },
+          {
+            "strategy": "xpath",
+            "value": "//*[normalize-space()='Savings']/following-sibling::*[1]",
+            "name": null,
+            "exact": false
+          }
         ],
         "expected_tag": null,
-        "robustness_note": "The demo exposes one stable account-value node; production adapters could add accessibility or visual fallbacks."
+        "robustness_note": "Use the visible Savings field; avoid action links."
       },
       "value": null,
-      "output_key": "savings_balance",
-      "expected_result": "A balance value is extracted",
+      "output_key": "current_savings_balance",
+      "expected_result": "The current savings balance is extracted.",
       "timeout_ms": 5000,
-      "retry": {"max_attempts": 2, "backoff_ms": 250},
+      "retry": {
+        "max_attempts": 2,
+        "backoff_ms": 250
+      },
       "risk": "safe"
     }
   ],
   "checkpoint": {
     "type": "url_contains",
-    "value": "/member/{{member_id}}/savings"
+    "value": "/member?member_id={{member_id}}"
   },
   "business_outcomes": [
     {
@@ -126,7 +150,9 @@
     }
   ],
   "metadata": {
-    "source": "checked-in reviewable example",
-    "note": "A genuine discovery run may overwrite this file after OPENAI_API_KEY is configured."
+    "generated_from": "llm_discovery",
+    "parameter_names": [
+      "member_id"
+    ]
   }
 }

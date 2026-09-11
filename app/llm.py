@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from typing import Any
 
 from app.models import AgentDecision
 from app.surface import Observation
@@ -15,7 +16,9 @@ Never request shell execution, arbitrary JavaScript, credentials, or navigation 
 Prefer robust locators in this order: role/name, label, visible text, stable CSS, XPath.
 For role locators, strategy='role', value is the ARIA role (button, link, textbox), and name is the accessible name.
 For label locators, value is the visible associated label.
-Use extract with output_key when the requested result is visible.
+Observations may include data_fields with label/value/selector triples from legacy tables. For read/extract actions, prefer the provided non-empty selector from the matching data_field instead of inventing a locator.
+Use extract with output_key when the requested result is visible. Do not include a concrete runtime value in a locator when a stable label or selector is available.
+The request payload includes progress.outputs and recent_actions from the controller. If progress.outputs already contains the requested result, use finish immediately; do not extract the same value again.
 Use finish only after the requested data has been extracted and the goal is satisfied.
 Use escalate if proceeding would be unsafe or the state is genuinely stuck.
 Keep reason_summary short and operational; do not provide hidden chain-of-thought.
@@ -51,7 +54,13 @@ def _openai_strict_schema() -> dict:
 
 class LLMProvider(ABC):
     @abstractmethod
-    async def decide(self, goal: str, observation: Observation, step_number: int) -> AgentDecision:
+    async def decide(
+        self,
+        goal: str,
+        observation: Observation,
+        step_number: int,
+        progress: dict[str, Any] | None = None,
+    ) -> AgentDecision:
         raise NotImplementedError
 
 
@@ -64,11 +73,18 @@ class OpenAIProvider(LLMProvider):
         self.client = AsyncOpenAI()
         self.model = model
 
-    async def decide(self, goal: str, observation: Observation, step_number: int) -> AgentDecision:
+    async def decide(
+        self,
+        goal: str,
+        observation: Observation,
+        step_number: int,
+        progress: dict[str, Any] | None = None,
+    ) -> AgentDecision:
         payload = {
             "goal": goal,
             "step_number": step_number,
             "observation": observation.as_prompt_data(),
+            "progress": progress or {"outputs": {}, "recent_actions": []},
         }
         response = await self.client.responses.create(
             model=self.model,
@@ -92,7 +108,14 @@ class MockLLMProvider(LLMProvider):
     def __init__(self, decisions: Iterable[AgentDecision]) -> None:
         self._decisions = iter(decisions)
 
-    async def decide(self, goal: str, observation: Observation, step_number: int) -> AgentDecision:
+    async def decide(
+        self,
+        goal: str,
+        observation: Observation,
+        step_number: int,
+        progress: dict[str, Any] | None = None,
+    ) -> AgentDecision:
+        del progress
         try:
             return next(self._decisions)
         except StopIteration as exc:

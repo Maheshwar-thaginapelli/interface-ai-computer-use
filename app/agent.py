@@ -110,7 +110,18 @@ class DiscoveryAgent:
                 seen.clear()
                 continue
 
-            decision = await self.provider.decide(goal, observation, step_number)
+            progress = {
+                "outputs": dict(outputs),
+                "recent_actions": [
+                    {
+                        "action": item.action.value,
+                        "output_key": item.output_key,
+                        "expected_result": item.expected_result,
+                    }
+                    for item in decisions[-4:]
+                ],
+            }
+            decision = await self.provider.decide(goal, observation, step_number, progress=progress)
             self.policy.validate_decision(decision)
             logger.emit(
                 "agent_decision",
@@ -163,6 +174,9 @@ class DiscoveryAgent:
             if decision.action == ActionType.EXTRACT and decision.output_key:
                 outputs[decision.output_key] = result or ""
                 logger.emit("output_extracted", key=decision.output_key, value=result)
+                # Extracting data is real progress even though it does not change the page.
+                # Reset repeated-state tracking so the model gets one clean turn to finish.
+                seen.clear()
 
         shot = await surface.screenshot(evidence_dir / "max-steps.png")
         intervention = handoff.request(Intervention(run_id, "MAX_STEPS", None, shot, surface.current_url))

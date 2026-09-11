@@ -18,6 +18,7 @@ class Observation:
     title: str
     text: str
     controls: list[dict[str, str]]
+    data_fields: list[dict[str, str]]
     state_hash: str
 
     def as_prompt_data(self) -> dict[str, Any]:
@@ -26,6 +27,7 @@ class Observation:
             "title": self.title,
             "visible_text": self.text,
             "controls": self.controls,
+            "data_fields": self.data_fields,
         }
 
 
@@ -126,13 +128,35 @@ class PlaywrightSurface:
                 "aria_label": aria,
                 "value": current_value,
             })
-        normalized = f"{page.url}\n{title}\n{body_text}\n{controls}"
+        data_fields: list[dict[str, str]] = []
+        rows = page.locator("tr")
+        row_count = min(await rows.count(), 60)
+        for index in range(row_count):
+            row = rows.nth(index)
+            cells = row.locator("th, td")
+            if await cells.count() < 2:
+                continue
+            label_node = cells.nth(0)
+            value_node = cells.nth(1)
+            if not await label_node.is_visible() or not await value_node.is_visible():
+                continue
+            label = (await label_node.inner_text()).strip()[:200]
+            value = (await value_node.inner_text()).strip()[:500]
+            value_id = await value_node.get_attribute("id") or ""
+            data_fields.append({
+                "label": label,
+                "value": value,
+                "selector": f"#{value_id}" if value_id else "",
+            })
+
+        normalized = f"{page.url}\n{title}\n{body_text}\n{controls}\n{data_fields}"
         state_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
-        return Observation(page.url, title, body_text, controls, state_hash)
+        return Observation(page.url, title, body_text, controls, data_fields, state_hash)
 
     async def resolve_target(self, target: TargetSpec) -> Locator:
         page = self._page()
         last_error: Exception | None = None
+        last_ambiguous: AmbiguousTarget | None = None
         for candidate in target.candidates:
             try:
                 locator = self._locator_for_candidate(page, candidate)
@@ -149,15 +173,121 @@ class PlaywrightSurface:
                             continue
                     return resolved
                 if len(visible_matches) > 1:
-                    raise AmbiguousTarget(
+                    # An ambiguous early candidate must not prevent a later, more specific
+                    # fallback from resolving the target. Remember the ambiguity and continue.
+                    last_ambiguous = AmbiguousTarget(
                         f"{target.description}: locator {candidate.strategy}:{candidate.value!r} matched {len(visible_matches)} visible elements"
                     )
-            except AmbiguousTarget:
-                raise
             except Exception as exc:  # a failed fallback should not block safer alternatives
                 last_error = exc
+
+        if last_ambiguous is not None:
+            raise last_ambiguous
         detail = f" ({last_error})" if last_error else ""
         raise TargetNotFound(f"Could not resolve target {target.description!r}{detail}")
+
+    async def _structured_data_value(self, decision: AgentDecision) -> Locator | None:
+        """Resolve a read/extract target from a visible legacy label/value table.
+
+        The LLM is allowed to describe a field naturally, but replay needs a stable locator.
+        For read/extract only, we deterministically match the requested output to a table row,
+        then rewrite the decision target to a canonical CSS/XPath locator before the artifact
+        is saved. This prevents discovery from succeeding with a locator that replay cannot use.
+        """
+        page = self._page()
+        description = decision.target.description if decision.target else ""
+        description_tokens = self._semantic_tokens(self._normalize_text(description))
+        output_tokens = self._semantic_tokens(self._normalize_text((decision.output_key or "").replace("_", " ")))
+
+        matches: list[tuple[float, str, Locator, str]] = []
+        rows = page.locator("tr")
+        for index in range(min(await rows.count(), 80)):
+            cells = rows.nth(index).locator("th, td")
+            if await cells.count() < 2:
+                continue
+            label_node = cells.nth(0)
+            value_node = cells.nth(1)
+            if not await label_node.is_visible() or not await value_node.is_visible():
+                continue
+
+            raw_label = (await label_node.inner_text()).strip()
+            normalized_label = self._normalize_text(raw_label)
+            label_tokens = self._semantic_tokens(normalized_label)
+            if not label_tokens:
+                continue
+
+            score = 0.0
+            normalized_description = self._normalize_text(description)
+            if normalized_label and (normalized_label in normalized_description or normalized_description in normalized_label):
+                score += 10.0
+
+            if output_tokens:
+                overlap = output_tokens & label_tokens
+                # Strongly prefer labels that cover the output contract, e.g.
+                # savings_balance -> Current Savings Balance.
+                if output_tokens.issubset(label_tokens):
+                    score += 9.0
+                elif label_tokens.issubset(output_tokens) and overlap:
+                    score += 6.0
+                else:
+                    score += 2.0 * len(overlap)
+
+            if description_tokens:
+                overlap = description_tokens & label_tokens
+                score += 1.5 * len(overlap)
+
+            # A model may use generic words such as "value" or include the member id.
+            # Require at least one meaningful semantic signal before considering a row.
+            if score <= 0:
+                continue
+
+            value_id = await value_node.get_attribute("id") or ""
+            matches.append((score, raw_label, value_node, value_id))
+
+        if not matches:
+            return None
+
+        matches.sort(key=lambda item: item[0], reverse=True)
+        best_score, best_label, best_locator, best_id = matches[0]
+        if len(matches) > 1 and abs(best_score - matches[1][0]) < 0.5:
+            raise AmbiguousTarget(
+                f"{description}: structured data fallback was ambiguous between "
+                f"{best_label!r} and {matches[1][1]!r}"
+            )
+
+        # Avoid weak one-token guesses unless the output contract itself names that field.
+        if best_score < 5.0:
+            return None
+
+        if best_id:
+            canonical = LocatorCandidate(strategy="css", value=f"#{best_id}")
+        else:
+            escaped = best_label.replace("'", "\\'")
+            canonical = LocatorCandidate(
+                strategy="xpath",
+                value=f"//tr[.//*[self::th or self::td][normalize-space()='{escaped}']]/*[self::th or self::td][2]",
+            )
+
+        # Canonicalize the recorded decision so the generated artifact is replayable.
+        decision.target = TargetSpec(
+            description=best_label,
+            candidates=[canonical],
+            robustness_note="Canonicalized from observed legacy label/value row during discovery.",
+        )
+        return best_locator
+
+    @staticmethod
+    def _semantic_tokens(value: str) -> set[str]:
+        stopwords = {
+            "a", "an", "the", "for", "of", "to", "from", "member",
+            "value", "current", "requested", "field", "amount", "read",
+            "visible", "displayed", "shown",
+        }
+        return {token for token in value.split() if len(token) > 2 and token not in stopwords and not token.isdigit()}
+
+    @staticmethod
+    def _normalize_text(value: str) -> str:
+        return " ".join("".join(ch.lower() if ch.isalnum() else " " for ch in value).split())
 
     def _locator_for_candidate(self, page: Page, candidate: LocatorCandidate) -> Locator:
         if candidate.strategy == "role":
@@ -181,7 +311,19 @@ class PlaywrightSurface:
             return None
         if action in {ActionType.FINISH, ActionType.ESCALATE}:
             return None
-        target = await self.resolve_target(decision.target)  # type: ignore[arg-type]
+        try:
+            target = await self.resolve_target(decision.target)  # type: ignore[arg-type]
+        except (TargetNotFound, AmbiguousTarget):
+            # Natural-language read/extract targets are often broad (for example,
+            # text "Savings" may match both a heading and a table label). For data
+            # extraction only, resolve against the observed label/value table using
+            # the output contract and canonicalize the target. Click/type/select
+            # actions remain strict and never use this semantic fallback.
+            if action not in {ActionType.READ, ActionType.EXTRACT}:
+                raise
+            target = await self._structured_data_value(decision)
+            if target is None:
+                raise
         if action == ActionType.CLICK:
             await target.click(timeout=timeout_ms)
             return None
