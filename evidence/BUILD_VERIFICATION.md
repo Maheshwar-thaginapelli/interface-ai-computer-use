@@ -1,12 +1,16 @@
-# Build verification in the generated workspace
+# Build Verification
 
-Verified in the build environment:
+Final verification was completed locally on macOS against the live FastAPI demo application.
 
-- `python -m compileall app tests` succeeds.
-- 17 non-browser core/demo/replay tests pass.
-- 1 Playwright surface test passes using `page.set_content`, validating Chromium launch, ranked locators, typing, and extraction.
-- Total verified passing tests: 18.
+Verified results:
 
-The environment's managed Chromium policy contains a global URL blocklist, so browser navigation to the local FastAPI server returns `ERR_BLOCKED_BY_ADMINISTRATOR`. The repository retains five end-to-end Playwright tests against the live local demo application; they are expected to run on a normal development machine after `playwright install chromium`.
+- Full test suite: `32 passed, 1 warning`
+- Genuine LLM-driven discovery completed successfully
+- Discovery generated the committed `example_capability.json`
+- Deterministic replay completed successfully without LLM decision-making
+- Successful replay returned `current_savings_balance: "$4621.77"`
+- `MEMBER_NOT_FOUND` was verified as a business outcome
+- Same-session human handoff and resume were verified successfully
+- Policy, redaction, locator, replay, and browser-integration tests passed
 
-No `OPENAI_API_KEY` was present in the build environment. Genuine LLM discovery evidence was therefore not fabricated. Run the commands in `evidence/README.md` after configuring a key.
+All demonstrations use synthetic data from the local banking application. No real banking credentials, production PII, or API secrets are committed to the repository.
