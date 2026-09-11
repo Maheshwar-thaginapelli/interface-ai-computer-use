@@ -1,8 +1,38 @@
 # Evidence
 
-`example_capability.json` is a checked-in reviewable capability example. The run-specific evidence folders are intentionally not populated with fabricated LLM/browser evidence.
+This directory contains evidence from the verified end-to-end computer-use automation demo.
 
-Generate submission evidence on a normal local machine after installing Playwright Chromium and setting `OPENAI_API_KEY`:
+## Included evidence
+
+- `discovery/`
+  - `run.jsonl` — structured log from the genuine LLM-driven discovery run.
+  - `final.png` — final browser state captured after successful discovery.
+
+- `example_capability.json`
+  - Typed, versioned capability artifact generated from the successful live LLM discovery run.
+  - Contains the parameterized workflow used for deterministic replay.
+
+- `replay-success/`
+  - Evidence from deterministic replay using the generated capability artifact.
+  - The replay path does not use the LLM to decide actions.
+
+- `replay-not-found/`
+  - Demonstrates the `MEMBER_NOT_FOUND` business outcome.
+  - This is returned as an expected business result rather than an automation failure.
+
+- `replay-handoff/`
+  - Demonstrates human-in-the-loop escalation.
+  - Automation pauses, the human takes control of the same live browser session, resolves the blocking condition, and returns control to automation.
+
+## Reproducing the evidence
+
+Start the local banking demo:
+
+```bash
+python -m app.cli demo
+```
+
+Then run genuine LLM discovery:
 
 ```bash
 python -m app.cli discover \
@@ -12,13 +42,21 @@ python -m app.cli discover \
   --artifact evidence/example_capability.json \
   --evidence evidence/discovery \
   --headed
+```
 
+Run deterministic replay:
+
+```bash
 python -m app.cli replay \
   --artifact evidence/example_capability.json \
   --input member_id=12345 \
   --evidence evidence/replay-success \
   --headed
+```
 
+Run the business-outcome case:
+
+```bash
 python -m app.cli replay \
   --artifact evidence/example_capability.json \
   --input member_id=99999 \
@@ -26,4 +64,21 @@ python -m app.cli replay \
   --headed
 ```
 
-For the human-handoff path, replay with member `70000` and `--interactive-handoff`. The automation pauses on the same browser session; click **Operator Override** in that browser, then return to the terminal and press Enter.
+Run the human-handoff path:
+
+```bash
+python -m app.cli replay \
+  --artifact evidence/example_capability.json \
+  --input member_id=70000 \
+  --evidence evidence/replay-handoff \
+  --headed \
+  --interactive-handoff
+```
+
+When the permission condition appears, automation pauses and releases control. Click **Operator Override** in the same browser session, return to the terminal, and press Enter to resume automation.
+
+## Data handling
+
+All evidence uses synthetic data from the local banking demo application.
+
+No real banking credentials, authentication tokens, API keys, production customer data, or real PII are stored in this directory.
