@@ -1,3 +1,0 @@
-[console_scripts]
-computer-use = app.cli:main
-computer-use-demo = app.demo:main
